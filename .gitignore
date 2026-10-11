@@ -1,0 +1,6 @@
+# local build outputs
+/bin/
+netbird/ssh-tool-netbird*
+tailscale/ssh-tool-tailscale*
+openconnect/ssh-tool-openconnect*
+*.exe

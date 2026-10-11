@@ -1,0 +1,115 @@
+# Plugin release workflow. Each plugin ships on its own tag:
+#   netbird-vN[.P]  tailscale-vN[.P]  openconnect-vN[.P]
+# N = helper protocol major (PROTOCOL.md), .P = a rebuild of it. Tags are
+# immutable, so a fix is a new .P, never a re-tag. The app picks the newest
+# <plugin>-v<=N it speaks and verifies each asset's sha256 digest.
+name: release
+
+on:
+  push:
+    tags:
+      - "netbird-v[0-9]+"
+      - "netbird-v[0-9]+.[0-9]+"
+      - "tailscale-v[0-9]+"
+      - "tailscale-v[0-9]+.[0-9]+"
+      - "openconnect-v[0-9]+"
+      - "openconnect-v[0-9]+.[0-9]+"
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      plugin: ${{ steps.p.outputs.plugin }}
+    steps:
+      - id: p
+        run: echo "plugin=${GITHUB_REF_NAME%%-v*}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: linux-amd64, runner: ubuntu-24.04, goos: linux, goarch: amd64 }
+          - { platform: linux-arm64, runner: ubuntu-24.04-arm, goos: linux, goarch: arm64 }
+          - { platform: windows-amd64, runner: ubuntu-24.04, goos: windows, goarch: amd64 }
+    runs-on: ${{ matrix.runner }}
+    env:
+      PLUGIN: ${{ needs.plan.outputs.plugin }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: ${{ env.PLUGIN }}/go.mod
+          cache-dependency-path: ${{ env.PLUGIN }}/go.sum
+      # NetBird needs CGO (a CGO_ENABLED=0 Windows build creates a real wt0
+      # adapter instead of staying in userspace); Windows is cross-built
+      # with Zig as the C toolchain. Tailscale and OpenConnect are pure Go.
+      - name: Install Zig (NetBird Windows cross CGO)
+        if: ${{ env.PLUGIN == 'netbird' && matrix.goos == 'windows' }}
+        run: |
+          ZIG_VERSION=0.14.0
+          curl -fsSL "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz" \
+            | sudo tar -xJ -C /opt
+          sudo ln -sf /opt/zig-linux-x86_64-${ZIG_VERSION}/zig /usr/local/bin/zig
+          printf '#!/bin/sh\nexec zig cc -target x86_64-windows-gnu -fno-sanitize=all "$@"\n' \
+            | sudo tee /usr/local/bin/zig-windows-amd64 >/dev/null
+          sudo chmod +x /usr/local/bin/zig-windows-amd64
+      - name: Build
+        working-directory: ${{ env.PLUGIN }}
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          out="ssh-tool-${PLUGIN}-${{ matrix.platform }}"
+          [ "${{ matrix.goos }}" = windows ] && out="${out}.exe"
+          extra=""
+          if [ "$PLUGIN" = netbird ]; then
+            export CGO_ENABLED=1
+            [ "${{ matrix.goos }}" = windows ] && export CC=zig-windows-amd64
+            # Stamp the embedded NetBird version so the management console
+            # shows the real client version instead of "development".
+            nbver="$(go list -m -f '{{.Version}}' github.com/netbirdio/netbird | sed 's/^v//')"
+            extra="-X github.com/netbirdio/netbird/version.version=${nbver}"
+          else
+            export CGO_ENABLED=0
+          fi
+          go build -trimpath -ldflags="-w -s -X main.version=${GITHUB_REF_NAME} ${extra}" -o "../bin/${out}" .
+          echo "OUT=${out}" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.OUT }}
+          path: bin/${{ env.OUT }}
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [plan, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # gh release create
+    env:
+      PLUGIN: ${{ needs.plan.outputs.plugin }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: bin
+          merge-multiple: true
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          (cd bin && sha256sum * > SHA256SUMS)
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" bin/* --clobber
+          else
+            gh release create "$tag" bin/* \
+              --title "$tag" \
+              --latest=false \
+              --notes "ssh-tool ${PLUGIN} plugin. Installed from ssh-tool: Settings > Network profiles > Plugins. Protocol and licence: see the repository README."
+          fi
