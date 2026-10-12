@@ -16,8 +16,15 @@ in the process list):
 | tailscale | `SSHTOOL_TS_AUTHKEY` | auth key, first registration only |
 | openconnect | `SSHTOOL_OC_CERT`, `SSHTOOL_OC_KEY` | client certificate chain and key, PEM |
 | openconnect | `SSHTOOL_OC_KEY_PASSWORD` | password of an encrypted key (optional) |
+| openconnect | `SSHTOOL_OC_SESSION` | `1` = report the session cookie (`session` event); AnyConnect only |
+| openconnect | `SSHTOOL_OC_COOKIE` | session cookie from an earlier, detached run to resume with |
+| openconnect | `SSHTOOL_OC_DEBUG` | `1` = the VPN engine's debug log on stderr |
+| openvpn | `SSHTOOL_OVPN_CONFIG` | the .ovpn configuration, every file inline |
 
 `--version` prints the release tag the binary was built from and exits.
+`--check` (openvpn) validates `SSHTOOL_OVPN_CONFIG` and prints one
+`{"event":"check","remotes":[..],"auth_user_pass":..,"static_challenge":"..",
+"client_cert":..,"tls_wrap":"..","warnings":[..]}` line, or an `error`.
 
 ## Events (stdout)
 
@@ -42,9 +49,20 @@ they change (openconnect).
 {"event":"auth","id":"1","banner":"..","message":"..","error":"..",
  "fields":[{"key":"main:username:1","name":"username","label":"Username:","kind":"text","value":"","options":[]}]}
 ```
-A login form to answer (openconnect). `kind` is `text`, `password` or
+A login form to answer (openconnect, openvpn). The OpenVPN plugin asks
+with fields named `username`, `password` and `response` (the answer to a
+static or dynamic challenge, usually a one-time code). `kind` is `text`, `password` or
 `select` (with `options`). `error` is set when the gateway rejected the
 previous answer. The app answers with an `auth` command, or `cancel`.
+
+```json
+{"event":"session","cookie":".."}
+```
+The session cookie, sent once the tunnel is up and again if a later
+login replaces it (openconnect, with `SSHTOOL_OC_SESSION=1`). A bearer
+credential for the gateway session: the app keeps it in memory only and
+passes it back in `SSHTOOL_OC_COOKIE`. A cookie the gateway no longer
+knows makes the helper fall back to a normal login (`auth` events).
 
 ```json
 {"event":"error","error":"..","cert_pin":"pin-sha256:..","cert_subject":"CN=..","cert_changed":false}
@@ -53,12 +71,24 @@ Fatal; the helper exits after it. The `cert_*` fields mean the gateway
 certificate is not trusted: the app may ask the user and restart the
 helper with that pin accepted.
 
+```json
+{"event":"open_url","url":"https://.."}
+```
+A login page for the user's browser (openvpn: the server holds the login
+open until it is done there). Only http(s).
+
 ## Commands (stdin)
 
 ```json
 {"cmd":"auth","id":"1","values":{"main:username:1":"alice"}}
 {"cmd":"cancel"}
+{"cmd":"detach"}
 ```
+
+`detach` (openconnect) exits without ending the session at the gateway,
+so it can be resumed with the cookie; closing stdin logs out. A helper
+that does not know `detach` ignores it, and the app falls back to
+closing stdin.
 
 Closing stdin (EOF) shuts the helper down cleanly.
 

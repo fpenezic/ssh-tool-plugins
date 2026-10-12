@@ -1,5 +1,5 @@
 # Plugin release workflow. Each plugin ships on its own tag:
-#   netbird-vN[.P]  tailscale-vN[.P]  openconnect-vN[.P]
+#   netbird-vN[.P]  tailscale-vN[.P]  openconnect-vN[.P]  openvpn-vN[.P]
 # N = helper protocol major (PROTOCOL.md), .P = a rebuild of it. Tags are
 # immutable, so a fix is a new .P, never a re-tag. The app picks the newest
 # <plugin>-v<=N it speaks and verifies each asset's sha256 digest.
@@ -14,6 +14,8 @@ on:
       - "tailscale-v[0-9]+.[0-9]+"
       - "openconnect-v[0-9]+"
       - "openconnect-v[0-9]+.[0-9]+"
+      - "openvpn-v[0-9]+"
+      - "openvpn-v[0-9]+.[0-9]+"
 
 permissions:
   contents: read
@@ -47,7 +49,7 @@ jobs:
           cache-dependency-path: ${{ env.PLUGIN }}/go.sum
       # NetBird needs CGO (a CGO_ENABLED=0 Windows build creates a real wt0
       # adapter instead of staying in userspace); Windows is cross-built
-      # with Zig as the C toolchain. Tailscale and OpenConnect are pure Go.
+      # with Zig as the C toolchain. Tailscale, OpenConnect and OpenVPN are pure Go.
       - name: Install Zig (NetBird Windows cross CGO)
         if: ${{ env.PLUGIN == 'netbird' && matrix.goos == 'windows' }}
         run: |

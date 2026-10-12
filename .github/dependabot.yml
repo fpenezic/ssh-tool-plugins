@@ -1,9 +1,12 @@
 version: 2
 updates:
   - package-ecosystem: gomod
-    directories: ["/netbird", "/tailscale", "/openconnect"]
+    directories: ["/netbird", "/tailscale", "/openconnect", "/openvpn"]
     schedule:
       interval: weekly
+    ignore:
+      # vendored with a patch (openconnect/third_party): updated by hand
+      - dependency-name: "github.com/sagernet/sing-openconnect"
     groups:
       go-deps:
         patterns: ["*"]

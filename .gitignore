@@ -3,4 +3,11 @@
 netbird/ssh-tool-netbird*
 tailscale/ssh-tool-tailscale*
 openconnect/ssh-tool-openconnect*
+openvpn/ssh-tool-openvpn*
+# `go build ./...` inside a plugin directory names the binary after it
+netbird/netbird
+tailscale/tailscale
+openconnect/openconnect
+openvpn/openvpn
 *.exe
+__pycache__/
