@@ -16,7 +16,10 @@
 //	{"event":"status","peers":N,"transport":"dtls"}            every 15s
 //	{"event":"error","error":"..","cert_pin":".."}             fatal
 //
-// and on stdin {"cmd":"auth","id":"..","values":{..}} / {"cmd":"cancel"};
+//	{"event":"session","cookie":".."}                          session cookie (SSHTOOL_OC_SESSION=1)
+//
+// and on stdin {"cmd":"auth","id":"..","values":{..}} / {"cmd":"cancel"} /
+// {"cmd":"detach"} (exit, keeping the gateway session);
 // stdin EOF shuts the helper down. Every form goes to the app, which fills
 // what it can (vault, TOTP) and prompts for the rest, so no secret has to be
 // handed to this process up front.
@@ -40,6 +43,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	oc "github.com/sagernet/sing-openconnect"
@@ -54,6 +58,20 @@ var version = "dev"
 const protocolVersion = 1
 
 var outMu sync.Mutex
+
+// resuming is set while a saved session cookie is being tried; the first
+// login form means the gateway rejected it.
+var resuming atomic.Bool
+
+// Connect timing, for the "tunnel up" log line: when the first login
+// form arrived and when the last answer went back, as monotonic offsets
+// from procStart (wall clock can jump under a time sync).
+var (
+	procStart             = time.Now()
+	firstForm, lastAnswer atomic.Int64
+)
+
+func sinceStart() int64 { return int64(time.Since(procStart)) }
 
 func emit(v any) {
 	b, _ := json.Marshal(v)
@@ -158,7 +176,9 @@ func main() {
 		MTU:       uint32(*mtu),
 		BaseMTU:   uint32(*baseMTU),
 		NoUDP:     *noUDP,
+		Logger:    newLibLogger(),
 	}
+	started := sinceStart() // timing includes the certificate probe
 	if pin, subject, changed, err := probeTrust(*server, pins); err != nil {
 		// Not trusted (by the system, or no longer matching the pin): hand the
 		// app the certificate's pin so it can ask the user (trust on first
@@ -173,6 +193,18 @@ func main() {
 	if len(pins) > 0 {
 		opts.TLSConfig.PeerFingerprints = pins
 		opts.TLSConfig.SystemTrustDisabled = true
+	}
+	// Session reuse (AnyConnect): SSHTOOL_OC_SESSION=1 asks for the session
+	// cookie back once the tunnel is up; SSHTOOL_OC_COOKIE is a cookie from
+	// an earlier, detached run to resume with. A cookie the gateway no
+	// longer knows is rejected and the client falls back to a normal login.
+	reportSession := os.Getenv("SSHTOOL_OC_SESSION") == "1" && *flavor == oc.FlavorAnyConnect
+	if c := os.Getenv("SSHTOOL_OC_COOKIE"); c != "" && *flavor == oc.FlavorAnyConnect {
+		// Named explicitly: a bare value is split at its first "=", and
+		// session tokens are often base64 with "=" padding.
+		opts.Cookie = "webvpn=" + c
+		resuming.Store(true)
+		log.Printf("resuming the saved gateway session")
 	}
 	if c := os.Getenv("SSHTOOL_OC_CERT"); c != "" {
 		opts.TLSConfig.Certificate = oc.Material{Content: []byte(c)}
@@ -222,6 +254,7 @@ func main() {
 		fatal("%v", err)
 	}
 
+	logConnectTiming(started, client.ActiveTransport())
 	tc := client.TunnelConfiguration()
 	var addrs []netip.Addr
 	for _, p := range tc.Addresses {
@@ -259,6 +292,20 @@ func main() {
 	emit(map[string]any{"event": "info", "info": cur.info})
 	cur.Unlock()
 	emit(map[string]any{"event": "ready", "socks": ln.Addr().String(), "protocol": protocolVersion})
+	if resuming.Load() {
+		log.Printf("gateway session resumed, no login needed")
+	}
+	lastCookie := ""
+	reportCookie := func() {
+		if !reportSession {
+			return
+		}
+		if c := client.SessionCookie(); c != "" && c != lastCookie {
+			lastCookie = c
+			emit(map[string]any{"event": "session", "cookie": c})
+		}
+	}
+	reportCookie()
 
 	go func() {
 		for {
@@ -276,6 +323,7 @@ func main() {
 
 	t := time.NewTicker(15 * time.Second)
 	defer t.Stop()
+	wasUp := true
 	for {
 		select {
 		case <-ctx.Done():
@@ -283,10 +331,22 @@ func main() {
 			return
 		case <-t.C:
 			peers := 0
-			if client.Ready() {
+			up := client.Ready()
+			if up {
 				peers = 1
 			}
+			// The gateway ending the session (timeout, admin) or a lost
+			// network shows here; the client reconnects on its own.
+			if up != wasUp {
+				if up {
+					log.Printf("tunnel back up (%s)", client.ActiveTransport())
+				} else {
+					log.Printf("tunnel down, reconnecting")
+				}
+				wasUp = up
+			}
 			emit(map[string]any{"event": "status", "peers": peers, "transport": client.ActiveTransport()})
+			reportCookie() // a reconnect after a lost session logs in again
 		}
 	}
 }
@@ -360,6 +420,10 @@ func watchAuth(ctx context.Context, client *oc.Client, cancel context.CancelFunc
 			continue
 		}
 		seen[ch.ID] = true
+		firstForm.CompareAndSwap(0, sinceStart())
+		if resuming.CompareAndSwap(true, false) {
+			log.Printf("the saved gateway session is no longer valid, logging in")
+		}
 		if ch.Browser != nil {
 			emit(map[string]string{"event": "error", "error": "this gateway asks for a browser (SAML) login, which the plugin does not support yet"})
 			cancel()
@@ -390,6 +454,7 @@ func readCommands(client *oc.Client, cancel context.CancelFunc) {
 		}
 		switch c.Cmd {
 		case "auth":
+			lastAnswer.Store(sinceStart())
 			resp := oc.AuthResponse{Form: &oc.AuthFormResponse{Values: c.Values}}
 			if err := client.CompleteAuthChallenge(c.ID, resp); err != nil {
 				log.Printf("auth answer %s: %v", c.ID, err)
@@ -397,6 +462,12 @@ func readCommands(client *oc.Client, cancel context.CancelFunc) {
 		case "cancel":
 			_ = client.CancelAuthChallenge(c.ID)
 			cancel()
+		case "detach":
+			// Leave without the CSTP disconnect Close would send: the
+			// gateway keeps the session (until its idle timeout) and the
+			// app resumes it with the cookie on the next connect.
+			log.Printf("detaching, the gateway session stays open for reuse")
+			os.Exit(0)
 		}
 	}
 	cancel()
@@ -474,4 +545,19 @@ func routeString(r oc.TunnelRoute) string {
 		return r.Prefix.String() + " via " + r.Gateway.String()
 	}
 	return r.Prefix.String()
+}
+
+// logConnectTiming splits the connect time into the gateway's first
+// answer, the login (mostly the user typing), and the tunnel setup after
+// it (CSTP, then the first DTLS attempt the engine waits for).
+func logConnectTiming(started int64, transport string) {
+	now := sinceStart()
+	d := func(a, b int64) time.Duration { return time.Duration(b - a).Round(10 * time.Millisecond) }
+	ff, la := firstForm.Load(), lastAnswer.Load()
+	if ff == 0 || la == 0 {
+		log.Printf("tunnel up in %s via %s (no login form)", d(started, now), transport)
+		return
+	}
+	log.Printf("tunnel up in %s via %s: first login form after %s, login %s, tunnel setup after login %s",
+		d(started, now), transport, d(started, ff), d(ff, la), d(la, now))
 }
