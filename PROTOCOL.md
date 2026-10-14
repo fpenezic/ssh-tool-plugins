@@ -20,6 +20,7 @@ in the process list):
 | openconnect | `SSHTOOL_OC_COOKIE` | session cookie from an earlier, detached run to resume with |
 | openconnect | `SSHTOOL_OC_DEBUG` | `1` = the VPN engine's debug log on stderr |
 | openvpn | `SSHTOOL_OVPN_CONFIG` | the .ovpn configuration, every file inline |
+| checkpoint | `SSHTOOL_CP_DEBUG` | `1` = log the login and tunnel exchange on stderr |
 
 `--version` prints the release tag the binary was built from and exits.
 `--check` (openvpn) validates `SSHTOOL_OVPN_CONFIG` and prints one
@@ -43,15 +44,16 @@ Heartbeat, about every 15 s. Fields are optional per plugin.
 {"event":"info","info":{"addresses":["10.0.0.5/32"],"routes":[...],"dns":[...],"mtu":1340,"transport":"dtls"}}
 ```
 Tunnel details for the app's Details view; sent at start and whenever
-they change (openconnect).
+they change (openconnect, openvpn, checkpoint).
 
 ```json
 {"event":"auth","id":"1","banner":"..","message":"..","error":"..",
  "fields":[{"key":"main:username:1","name":"username","label":"Username:","kind":"text","value":"","options":[]}]}
 ```
-A login form to answer (openconnect, openvpn). The OpenVPN plugin asks
-with fields named `username`, `password` and `response` (the answer to a
-static or dynamic challenge, usually a one-time code). `kind` is `text`, `password` or
+A login form to answer (openconnect, openvpn, checkpoint). The OpenVPN
+and Check Point plugins ask with fields named `username`, `password` and
+`response` (the answer to a static or dynamic challenge, or to a further
+Check Point login factor; usually a one-time code). `kind` is `text`, `password` or
 `select` (with `options`). `error` is set when the gateway rejected the
 previous answer. The app answers with an `auth` command, or `cancel`.
 
