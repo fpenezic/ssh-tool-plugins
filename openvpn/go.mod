@@ -5,8 +5,8 @@ go 1.26.0
 toolchain go1.26.9
 
 require (
-	github.com/anchore/go-lzo v0.1.0
-	github.com/pierrec/lz4/v4 v4.1.21
+	github.com/anchore/go-lzo v0.1.1
+	github.com/pierrec/lz4/v4 v4.1.33
 	golang.org/x/crypto v0.58.0
 	golang.zx2c4.com/wireguard v0.0.0-20260522210424-ecfc5a8d5446
 )
