@@ -39,6 +39,10 @@ Every plugin is released on its own tag:
 
 A tag push builds the plugin for linux-amd64, linux-arm64 and
 windows-amd64 and publishes `ssh-tool-<plugin>-<os>-<arch>[.exe]` assets.
+The build waits on a vulnerability gate (`scripts/vulncheck.py`, govulncheck):
+a Go vulnerability the plugin's code reaches, the standard library
+included, stops the release. One without a fix yet is listed with its
+reason in `<plugin>/.vulncheck-allow`.
 Releases are never marked "Latest".
 
 Older app versions (before the move to this repository) fetch the
