@@ -15,6 +15,7 @@
 //	{"event":"ready","socks":"127.0.0.1:PORT","protocol":1}    proxy listening
 //	{"event":"status","peers":N,"transport":"dtls"}            every 15s
 //	{"event":"error","error":"..","cert_pin":".."}             fatal
+//	{"event":"error","error":"..","unreachable":true}          fatal, gateway down
 //
 //	{"event":"session","cookie":".."}                          session cookie (SSHTOOL_OC_SESSION=1)
 //
@@ -179,6 +180,12 @@ func main() {
 		Logger:    newLibLogger(),
 	}
 	started := sinceStart() // timing includes the certificate probe
+	if err := reachable(*server); err != nil {
+		// Nothing answers at this address: the app moves on to the
+		// profile's next gateway, when it has one.
+		emit(map[string]any{"event": "error", "error": fmt.Sprintf("gateway unreachable: %v", err), "unreachable": true})
+		os.Exit(1)
+	}
 	if pin, subject, changed, err := probeTrust(*server, pins); err != nil {
 		// Not trusted (by the system, or no longer matching the pin): hand the
 		// app the certificate's pin so it can ask the user (trust on first
@@ -351,23 +358,46 @@ func main() {
 	}
 }
 
-// probeTrust checks the gateway certificate: against pins when there are
-// any, else against the system roots. On failure it returns the leaf's pin
-// so the app can offer trust on first use; changed reports a certificate
-// that no longer matches the pinned one.
-func probeTrust(server string, pins []string) (pin, subject string, changed bool, err error) {
-	u, perr := url.Parse(server)
-	if perr != nil || u.Hostname() == "" {
-		return "", "", false, fmt.Errorf("bad server URL %q", server)
+// gatewayAddr is the host and host:port of a gateway URL.
+func gatewayAddr(server string) (string, string, error) {
+	u, err := url.Parse(server)
+	if err != nil || u.Hostname() == "" {
+		return "", "", fmt.Errorf("bad server URL %q", server)
 	}
 	port := u.Port()
 	if port == "" {
 		port = "443"
 	}
-	addr := net.JoinHostPort(u.Hostname(), port)
+	return u.Hostname(), net.JoinHostPort(u.Hostname(), port), nil
+}
+
+// reachable reports a gateway that does not complete a TLS handshake within
+// 10 seconds (down, filtered, not a TLS server). Trust is probeTrust's job.
+func reachable(server string) error {
+	host, addr, err := gatewayAddr(server)
+	if err != nil {
+		return err
+	}
+	d := &net.Dialer{Timeout: 10 * time.Second}
+	conn, err := tls.DialWithDialer(d, "tcp", addr, &tls.Config{ServerName: host, InsecureSkipVerify: true})
+	if err != nil {
+		return err
+	}
+	return conn.Close()
+}
+
+// probeTrust checks the gateway certificate: against pins when there are
+// any, else against the system roots. On failure it returns the leaf's pin
+// so the app can offer trust on first use; changed reports a certificate
+// that no longer matches the pinned one.
+func probeTrust(server string, pins []string) (pin, subject string, changed bool, err error) {
+	host, addr, aerr := gatewayAddr(server)
+	if aerr != nil {
+		return "", "", false, aerr
+	}
 	d := &net.Dialer{Timeout: 15 * time.Second}
 	leafPin := func() (string, string, error) {
-		raw, err := tls.DialWithDialer(d, "tcp", addr, &tls.Config{ServerName: u.Hostname(), InsecureSkipVerify: true})
+		raw, err := tls.DialWithDialer(d, "tcp", addr, &tls.Config{ServerName: host, InsecureSkipVerify: true})
 		if err != nil {
 			return "", "", err
 		}
@@ -388,7 +418,7 @@ func probeTrust(server string, pins []string) (pin, subject string, changed bool
 		}
 		return got, subj, true, fmt.Errorf("server certificate changed since it was trusted")
 	}
-	conn, derr := tls.DialWithDialer(d, "tcp", addr, &tls.Config{ServerName: u.Hostname()})
+	conn, derr := tls.DialWithDialer(d, "tcp", addr, &tls.Config{ServerName: host})
 	if derr == nil {
 		conn.Close()
 		return "", "", false, nil
