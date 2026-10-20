@@ -371,8 +371,10 @@ func gatewayAddr(server string) (string, string, error) {
 	return u.Hostname(), net.JoinHostPort(u.Hostname(), port), nil
 }
 
-// reachable reports a gateway that does not complete a TLS handshake within
-// 10 seconds (down, filtered, not a TLS server). Trust is probeTrust's job.
+// reachable reports a gateway that does not answer TLS within 10 seconds
+// (down, filtered, not a TLS server). A TLS alert is an answer: a gateway
+// that wants a client certificate may end this handshake, which sends
+// none, with one. Trust is probeTrust's job.
 func reachable(server string) error {
 	host, addr, err := gatewayAddr(server)
 	if err != nil {
@@ -380,6 +382,11 @@ func reachable(server string) error {
 	}
 	d := &net.Dialer{Timeout: 10 * time.Second}
 	conn, err := tls.DialWithDialer(d, "tcp", addr, &tls.Config{ServerName: host, InsecureSkipVerify: true})
+	// crypto/tls returns the server's alert as an OpError "remote error".
+	var oe *net.OpError
+	if errors.As(err, &oe) && oe.Op == "remote error" {
+		return nil
+	}
 	if err != nil {
 		return err
 	}

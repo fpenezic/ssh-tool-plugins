@@ -72,7 +72,7 @@ knows makes the helper fall back to a normal login (`auth` events).
 Fatal; the helper exits after it. The `cert_*` fields mean the gateway
 certificate is not trusted: the app may ask the user and restart the
 helper with that pin accepted. `"unreachable": true` (openconnect) means
-the gateway did not answer at all (no TLS handshake within 10 seconds), so
+the gateway did not answer at all (no TLS answer within 10 seconds), so
 the app may start the helper again with the profile's next gateway; any
 other error, a rejected login above all, is not retried elsewhere.
 
