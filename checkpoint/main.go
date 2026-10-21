@@ -588,11 +588,19 @@ func readCommands(cancel context.CancelFunc) {
 		switch c.Cmd {
 		case "auth":
 			if ch != nil {
-				ch <- c.Values
+				// One answer per prompt: a second (double submit) must
+				// not block this reader, or stdin EOF never shuts down.
+				select {
+				case ch <- c.Values:
+				default:
+				}
 			}
 		case "cancel":
 			if ch != nil {
-				ch <- nil
+				select {
+				case ch <- nil:
+				default:
+				}
 			}
 			cancel()
 		}
