@@ -4,7 +4,7 @@ go 1.26.0
 
 toolchain go1.26.10
 
-require github.com/netbirdio/netbird v0.80.0
+require github.com/netbirdio/netbird v0.81.2
 
 require (
 	cunicu.li/go-rosenpass v0.5.42 // indirect
@@ -43,6 +43,7 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
+	github.com/google/go-tpm v0.9.8 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/nftables v0.3.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
