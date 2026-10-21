@@ -2,7 +2,7 @@ module github.com/fpenezic/ssh-tool-plugins/checkpoint
 
 go 1.26.0
 
-toolchain go1.26.9
+toolchain go1.26.10
 
 require golang.zx2c4.com/wireguard v0.0.0-20260522210424-ecfc5a8d5446
 

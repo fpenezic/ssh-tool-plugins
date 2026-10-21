@@ -2,7 +2,7 @@ module github.com/fpenezic/ssh-tool-plugins/openconnect
 
 go 1.26.3
 
-toolchain go1.26.9
+toolchain go1.26.10
 
 require (
 	github.com/sagernet/sing-openconnect v0.1.0

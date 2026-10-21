@@ -2,7 +2,7 @@ module github.com/fpenezic/ssh-tool-plugins/tailscale
 
 go 1.27.1
 
-toolchain go1.27.2
+toolchain go1.27.3
 
 require tailscale.com v1.104.1
 

@@ -2,7 +2,7 @@ module github.com/fpenezic/ssh-tool-plugins/netbird
 
 go 1.26.0
 
-toolchain go1.26.9
+toolchain go1.26.10
 
 require github.com/netbirdio/netbird v0.80.0
 
