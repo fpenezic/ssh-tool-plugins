@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"net"
+	"net/netip"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/miekg/dns"
 	mgmProto "github.com/netbirdio/netbird/shared/management/proto"
+	"github.com/netbirdio/netbird/shared/netiputil"
 )
 
 func syncResponse() *mgmProto.SyncResponse {
@@ -46,6 +48,18 @@ func TestTunnelInfo(t *testing.T) {
 	bp.NetworkMap.DNSConfig.NameServerGroups[0].NameServers = []*mgmProto.NameServer{{IP: "10.10.0.54", Port: 70000}, {IP: "10.10.0.55"}}
 	if _, g := tunnelInfo(nil, bp.GetNetworkMap()); len(g[0].servers) != 1 || g[0].servers[0].String() != "10.10.0.55:53" {
 		t.Errorf("ports: %+v", g[0].servers)
+	}
+	// A nameserver on another peer's IPv6 address counts as inside the
+	// overlay through the account's IPv6 range, with no route for it.
+	v6 := syncResponse()
+	enc, err := netiputil.EncodePrefix(netip.MustParsePrefix("fd00:4e42::5/64"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v6.NetworkMap.PeerConfig.AddressV6 = enc
+	v6.NetworkMap.DNSConfig.NameServerGroups[0].NameServers = []*mgmProto.NameServer{{IP: "fd00:4e42::53", Port: 53}}
+	if _, g := tunnelInfo(nil, v6.GetNetworkMap()); !g[0].overlay || g[0].servers[0].String() != "[fd00:4e42::53]:53" {
+		t.Errorf("ipv6 overlay: %+v", g[0])
 	}
 	// No routes: the field is still there, empty (the app reads it as the
 	// whole tunnel and drops routes it remembered).
