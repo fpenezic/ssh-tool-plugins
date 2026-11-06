@@ -8,7 +8,7 @@ func TestGatewayNumbers(t *testing.T) {
 			t.Errorf("portOf(%d) = %d (want %d)", in, got, want)
 		}
 	}
-	for in, want := range map[int64]int{1: 1, -5: -5, 1 << 31: 0, -(1 << 31) - 1: 0} {
+	for in, want := range map[int64]int{1: 1, -5: -5, 1<<31 - 1: 1<<31 - 1, -(1 << 31): -(1 << 31), 1 << 31: 0, -(1 << 31) - 1: 0} {
 		if got := smallInt(in); got != want {
 			t.Errorf("smallInt(%d) = %d (want %d)", in, got, want)
 		}

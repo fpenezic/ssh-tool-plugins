@@ -128,3 +128,58 @@ func TestResolveOverlay(t *testing.T) {
 		t.Errorf("a more specific public group was overridden: %v", asked)
 	}
 }
+
+// A truncated UDP answer is asked again over TCP, and the TCP answer's
+// address is the one used.
+func TestResolveOverlayTruncated(t *testing.T) {
+	handler := func(tcp bool) dns.HandlerFunc {
+		return func(w dns.ResponseWriter, r *dns.Msg) {
+			m := new(dns.Msg)
+			m.SetReply(r)
+			if r.Question[0].Qtype == dns.TypeA {
+				if tcp {
+					rr, _ := dns.NewRR("big.corp.example.com. 60 IN A 10.10.7.7")
+					m.Answer = append(m.Answer, rr)
+				} else {
+					m.Truncated = true
+				}
+			}
+			_ = w.WriteMsg(m)
+		}
+	}
+	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, srv := range []*dns.Server{{PacketConn: pc, Handler: handler(false)}, {Listener: ln, Handler: handler(true)}} {
+		started := make(chan struct{})
+		srv.NotifyStartedFunc = func() { close(started) }
+		go func() { _ = srv.ActivateAndServe() }()
+		<-started
+		defer srv.Shutdown()
+	}
+	_, groups := tunnelInfo(nil, syncResponse().GetNetworkMap())
+	overlayDNS.Lock()
+	overlayDNS.groups = groups
+	overlayDNS.Unlock()
+	defer func() {
+		overlayDNS.Lock()
+		overlayDNS.groups = nil
+		overlayDNS.Unlock()
+	}()
+	dial := func(ctx context.Context, network, _ string) (net.Conn, error) {
+		var d net.Dialer
+		if network == "tcp" {
+			return d.DialContext(ctx, "tcp", ln.Addr().String())
+		}
+		return d.DialContext(ctx, network, pc.LocalAddr().String())
+	}
+	ips, ok := resolveOverlay(context.Background(), "big.corp.example.com", dial)
+	if !ok || strings.Join(ips, ",") != "10.10.7.7" {
+		t.Fatalf("truncated: %q %v", ips, ok)
+	}
+}
