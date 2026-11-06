@@ -41,6 +41,12 @@ func TestTunnelInfo(t *testing.T) {
 	if len(groups) != 2 || groups[0].domains[0] != "corp.example.com" || !groups[0].overlay || groups[0].servers[0].String() != "10.10.0.53:53" || groups[1].overlay {
 		t.Errorf("groups: %+v", groups)
 	}
+	// A port outside 1-65535 leaves the server out; no port is 53.
+	bp := syncResponse()
+	bp.NetworkMap.DNSConfig.NameServerGroups[0].NameServers = []*mgmProto.NameServer{{IP: "10.10.0.54", Port: 70000}, {IP: "10.10.0.55"}}
+	if _, g := tunnelInfo(nil, bp.GetNetworkMap()); len(g[0].servers) != 1 || g[0].servers[0].String() != "10.10.0.55:53" {
+		t.Errorf("ports: %+v", g[0].servers)
+	}
 	// No routes: the field is still there, empty (the app reads it as the
 	// whole tunnel and drops routes it remembered).
 	nr := syncResponse()
@@ -188,5 +194,33 @@ func TestResolveOverlayTruncated(t *testing.T) {
 	ips, ok := resolveOverlay(context.Background(), "big.corp.example.com", dial)
 	if !ok || strings.Join(ips, ",") != "10.10.7.7" {
 		t.Fatalf("truncated: %q %v", ips, ok)
+	}
+}
+
+// An answer whose question differs in class is refused.
+func TestQueryRefusesOtherClass(t *testing.T) {
+	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &dns.Server{PacketConn: pc, Handler: dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
+		m := new(dns.Msg)
+		m.SetReply(r)
+		m.Question[0].Qclass = dns.ClassCHAOS
+		rr, _ := dns.NewRR("db1.corp.example.com. 60 IN A 10.10.5.7")
+		m.Answer = append(m.Answer, rr)
+		_ = w.WriteMsg(m)
+	})}
+	started := make(chan struct{})
+	srv.NotifyStartedFunc = func() { close(started) }
+	go func() { _ = srv.ActivateAndServe() }()
+	<-started
+	defer srv.Shutdown()
+	dial := func(ctx context.Context, network, _ string) (net.Conn, error) {
+		var d net.Dialer
+		return d.DialContext(ctx, network, pc.LocalAddr().String())
+	}
+	if got, err := queryOne(context.Background(), dial, "10.10.0.53:53", "db1.corp.example.com", dns.TypeA); err == nil {
+		t.Errorf("an answer in another class was taken: %v", got)
 	}
 }

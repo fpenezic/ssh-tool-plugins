@@ -23,6 +23,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net"
 	"net/netip"
 	"sort"
@@ -136,9 +137,15 @@ func tunnelInfo(pc *mgmProto.PeerConfig, nm *mgmProto.NetworkMap) (map[string]an
 			if err != nil {
 				continue
 			}
+			// No port is 53; one outside 1-65535 is a broken entry, skipped
+			// (asking 53 instead could reach another server).
 			port := uint16(53)
-			if ns.GetPort() > 0 && ns.GetPort() < 65536 {
-				port = uint16(ns.GetPort())
+			switch p := ns.GetPort(); {
+			case p > 0 && p < 65536:
+				port = uint16(p)
+			case p != 0:
+				log.Printf("netbird: nameserver %s has port %d, left out", ns.GetIP(), p)
+				continue
 			}
 			servers = append(servers, netip.AddrPortFrom(ip, port).String())
 			for _, p := range overlay {
@@ -243,7 +250,7 @@ func queryOne(ctx context.Context, dial dialFunc, server, host string, qt uint16
 	if err != nil {
 		return nil, err
 	}
-	if r.Id != m.Id || len(r.Question) != 1 || !strings.EqualFold(r.Question[0].Name, m.Question[0].Name) || r.Question[0].Qtype != qt {
+	if r.Id != m.Id || len(r.Question) != 1 || !strings.EqualFold(r.Question[0].Name, m.Question[0].Name) || r.Question[0].Qtype != qt || r.Question[0].Qclass != m.Question[0].Qclass {
 		return nil, errors.New("the answer is to another question")
 	}
 	if r.Rcode != dns.RcodeSuccess {
