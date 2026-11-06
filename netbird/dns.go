@@ -84,9 +84,13 @@ func tunnelInfo(pc *mgmProto.PeerConfig, nm *mgmProto.NetworkMap) (map[string]an
 		overlay = append(overlay, p.Masked())
 	}
 	sort.Strings(routes)
-	if len(routes) > 0 {
-		info["routes"] = routes
+	// Always sent, an empty list included: the app reads a report with a
+	// routes field as the whole tunnel, so a removed last route (and the
+	// domains that went with it) is cleared there instead of kept.
+	if routes == nil {
+		routes = []string{}
 	}
+	info["routes"] = routes
 
 	var search, split, servers []string
 	seen := map[*[]string]map[string]bool{&search: {}, &split: {}}

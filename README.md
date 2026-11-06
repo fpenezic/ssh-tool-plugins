@@ -62,6 +62,15 @@ cd netbird && go build -o ssh-tool-netbird .   # CGO; Windows cross-build needs 
 Put the binary next to the ssh-tool executable (or in its plugins
 directory) and the app picks it up.
 
+## The NetBird client
+
+An embedded userspace NetBird peer (`github.com/netbirdio/netbird/client/embed`, netstack mode, no TUN adapter) behind a loopback SOCKS5 proxy. The NetBird config is kept in memory, so every start registers the machine as a peer again: use a reusable setup key, with ephemeral peers so the old ones expire.
+
+- **Info event.** From the latest network map (expanded from the envelope for a peer on NetBird's components format): the peer's address, the network routes (always sent, `[]` when there are none), `search_domains` (the peer's NetBird domain, and the match domains of nameserver groups with search domains on) and `split_dns` (every such domain). The app's proxy routes names in those domains through the tunnel.
+- **Names.** A hostname in a SOCKS request resolves inside the overlay through the client's own DNS service. That service forwards a nameserver group's queries over the host network (NetBird's `upstream_general.go` uses the netstack only on `js`), which a nameserver reachable only through the overlay never answers. For a name whose most specific matching group has such servers, the helper asks them itself through the netstack (UDP, TCP when truncated; A, then AAAA; the answer must match the question, and only the name's own records or its CNAME chain count), with an 8 s budget, and dials each address in turn with a share of the remaining time. Anything else, or a lookup that gives nothing, is dialled by name the client's way.
+- **Start.** The client is up before its DNS service has the network's zone; during the first 20 s a name that does not resolve is tried again every second, at most four times.
+- **Version.** The replace set in `netbird/go.mod` mirrors the pinned NetBird release's own; Dependabot leaves NetBird alone, it is bumped by hand.
+
 ## The OpenVPN client
 
 `openvpn/internal/ovpn` is an OpenVPN 2.x client written for this plugin

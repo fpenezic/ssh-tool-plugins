@@ -114,8 +114,18 @@ func handleConn(conn net.Conn, d dialer) error {
 		addrs, ok := resolveOverlay(rctx, host, d.DialContext)
 		rcancel()
 		if ok {
-			for _, a := range addrs {
-				if target, err = d.DialContext(dctx, "tcp", net.JoinHostPort(a, fmt.Sprintf("%d", port))); err == nil {
+			for i, a := range addrs {
+				// A share of what is left for each address still to try, and
+				// one share kept for the fallback dial by name: one address
+				// that drops packets cannot eat the whole deadline.
+				share := 5 * time.Second
+				if dl, ok := dctx.Deadline(); ok {
+					share = time.Until(dl) / time.Duration(len(addrs)-i+1)
+				}
+				actx, acancel := context.WithTimeout(dctx, share)
+				target, err = d.DialContext(actx, "tcp", net.JoinHostPort(a, fmt.Sprintf("%d", port)))
+				acancel()
+				if err == nil {
 					break
 				}
 			}
