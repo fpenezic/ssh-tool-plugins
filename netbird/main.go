@@ -33,9 +33,13 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/netbirdio/netbird/client/embed"
+	nbnetworkmap "github.com/netbirdio/netbird/shared/management/networkmap"
+	mgmProto "github.com/netbirdio/netbird/shared/management/proto"
+	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
 func emit(v any) {
@@ -154,7 +158,7 @@ func main() {
 		if err != nil || sr == nil {
 			return
 		}
-		info, groups := tunnelInfo(sr)
+		info, groups := tunnelInfo(sr.GetPeerConfig(), networkMapOf(client, sr))
 		overlayDNS.Lock()
 		overlayDNS.groups = groups
 		overlayDNS.Unlock()
@@ -191,4 +195,39 @@ func main() {
 	stopCtx, stopCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer stopCancel()
 	_ = client.Stop(stopCtx)
+}
+
+// networkMapOf is the network map of a sync response. A peer on the
+// components format (NetBird 0.82 management with a capable client) gets
+// an envelope instead of the map; the engine expands it for itself but
+// stores the response as it came, so it is expanded here the same way
+// (EnvelopeToNetworkMap with this peer's key and DNS domain).
+func networkMapOf(client *embed.Client, sr *mgmProto.SyncResponse) *mgmProto.NetworkMap {
+	if nm := sr.GetNetworkMap(); nm != nil {
+		return nm
+	}
+	env := sr.GetNetworkMapEnvelope()
+	if env == nil {
+		return nil
+	}
+	cfg, err := client.GetConfig()
+	if err != nil {
+		return nil
+	}
+	key, err := wgtypes.ParseKey(cfg.PrivateKey)
+	if err != nil {
+		return nil
+	}
+	domain := ""
+	if f := sr.GetPeerConfig().GetFqdn(); strings.Contains(f, ".") {
+		domain = f[strings.Index(f, ".")+1:]
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	res, err := nbnetworkmap.EnvelopeToNetworkMap(ctx, env, key.PublicKey().String(), domain, true)
+	if err != nil {
+		log.Printf("netbird: cannot expand the network map: %v", err)
+		return nil
+	}
+	return res.NetworkMap
 }

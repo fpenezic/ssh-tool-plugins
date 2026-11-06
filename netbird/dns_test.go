@@ -27,7 +27,7 @@ func syncResponse() *mgmProto.SyncResponse {
 }
 
 func TestTunnelInfo(t *testing.T) {
-	info, groups := tunnelInfo(syncResponse())
+	info, groups := tunnelInfo(nil, syncResponse().GetNetworkMap())
 	want := map[string]any{
 		"addresses":      []string{"100.90.1.2/16"},
 		"routes":         []string{"10.10.0.0/16"},
@@ -38,13 +38,13 @@ func TestTunnelInfo(t *testing.T) {
 	if !reflect.DeepEqual(info, want) {
 		t.Errorf("info:\n got %v\nwant %v", info, want)
 	}
-	if len(groups) != 1 || groups[0].domains[0] != "corp.example.com" || groups[0].servers[0].String() != "10.10.0.53:53" {
+	if len(groups) != 2 || groups[0].domains[0] != "corp.example.com" || !groups[0].overlay || groups[0].servers[0].String() != "10.10.0.53:53" || groups[1].overlay {
 		t.Errorf("groups: %+v", groups)
 	}
 	// A zone with search off is reported for routing, not as a search domain.
 	sr := syncResponse()
 	sr.NetworkMap.DNSConfig.CustomZones = []*mgmProto.CustomZone{{Domain: "nb.example.com", SearchDomainDisabled: true}}
-	info, _ = tunnelInfo(sr)
+	info, _ = tunnelInfo(nil, sr.GetNetworkMap())
 	if s := info["search_domains"].([]string); len(s) != 1 || s[0] != "corp.example.com" {
 		t.Errorf("search with the zone's search off: %v", s)
 	}
@@ -62,10 +62,21 @@ func TestResolveOverlay(t *testing.T) {
 		m := new(dns.Msg)
 		m.SetReply(r)
 		// DNS names compare without case.
-		if strings.EqualFold(r.Question[0].Name, "db1.corp.example.com.") && r.Question[0].Qtype == dns.TypeA {
-			rr, _ := dns.NewRR("db1.corp.example.com. 60 IN A 10.10.5.7")
-			m.Answer = append(m.Answer, rr)
-		} else if r.Question[0].Qtype == dns.TypeA {
+		q := r.Question[0]
+		switch {
+		case strings.EqualFold(q.Name, "db1.corp.example.com.") && q.Qtype == dns.TypeA:
+			for _, s := range []string{"db1.corp.example.com. 60 IN A 10.10.5.7", "db1.corp.example.com. 60 IN A 10.10.5.8"} {
+				rr, _ := dns.NewRR(s)
+				m.Answer = append(m.Answer, rr)
+			}
+		case strings.EqualFold(q.Name, "web.corp.example.com.") && q.Qtype == dns.TypeA:
+			// A CNAME chain, plus an address for an unrelated name that must
+			// not be taken.
+			for _, s := range []string{"web.corp.example.com. 60 IN CNAME lb.corp.example.com.", "lb.corp.example.com. 60 IN A 10.10.6.1", "evil.example.net. 60 IN A 203.0.113.9"} {
+				rr, _ := dns.NewRR(s)
+				m.Answer = append(m.Answer, rr)
+			}
+		case q.Qtype == dns.TypeA:
 			m.Rcode = dns.RcodeNameError
 		}
 		_ = w.WriteMsg(m)
@@ -76,7 +87,7 @@ func TestResolveOverlay(t *testing.T) {
 	<-started
 	defer srv.Shutdown()
 
-	_, groups := tunnelInfo(syncResponse())
+	_, groups := tunnelInfo(nil, syncResponse().GetNetworkMap())
 	overlayDNS.Lock()
 	overlayDNS.groups = groups
 	overlayDNS.Unlock()
@@ -91,9 +102,12 @@ func TestResolveOverlay(t *testing.T) {
 		var d net.Dialer
 		return d.DialContext(ctx, network, pc.LocalAddr().String())
 	}
-	ip, ok := resolveOverlay(context.Background(), "DB1.corp.example.com", dial)
-	if !ok || ip != "10.10.5.7" {
-		t.Fatalf("resolve: %q %v", ip, ok)
+	ips, ok := resolveOverlay(context.Background(), "DB1.corp.example.com", dial)
+	if !ok || strings.Join(ips, ",") != "10.10.5.7,10.10.5.8" {
+		t.Fatalf("resolve: %q %v", ips, ok)
+	}
+	if ips, ok := resolveOverlay(context.Background(), "web.corp.example.com", dial); !ok || strings.Join(ips, ",") != "10.10.6.1" {
+		t.Errorf("cname chain: %q %v", ips, ok)
 	}
 	if asked[0] != "udp 10.10.0.53:53" {
 		t.Errorf("asked %v", asked)
@@ -104,5 +118,13 @@ func TestResolveOverlay(t *testing.T) {
 	asked = nil
 	if _, ok := resolveOverlay(context.Background(), "x.public.example", dial); ok || len(asked) != 0 {
 		t.Errorf("a public group's name was asked here: %v", asked)
+	}
+	// A more specific domain on a public group wins and is left to the client.
+	overlayDNS.Lock()
+	overlayDNS.groups = append(overlayDNS.groups, nsGroup{domains: []string{"pub.corp.example.com"}})
+	overlayDNS.Unlock()
+	asked = nil
+	if _, ok := resolveOverlay(context.Background(), "x.pub.corp.example.com", dial); ok || len(asked) != 0 {
+		t.Errorf("a more specific public group was overridden: %v", asked)
 	}
 }

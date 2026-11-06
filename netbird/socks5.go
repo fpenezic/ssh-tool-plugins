@@ -104,13 +104,26 @@ func handleConn(conn net.Conn, d dialer) error {
 
 	dctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	// A name in a nameserver group whose servers sit inside the overlay:
-	// asked here, through the netstack (dns.go says why).
+	// asked here, through the netstack (dns.go says why), with a budget of
+	// its own so a slow server leaves time for the dial; each address it
+	// gives is tried in turn, and the name the client's way after them.
+	var target net.Conn
+	var err error
 	if req[3] == 0x03 {
-		if ip, ok := resolveOverlay(dctx, host, d.DialContext); ok {
-			host = ip
+		rctx, rcancel := context.WithTimeout(dctx, 8*time.Second)
+		addrs, ok := resolveOverlay(rctx, host, d.DialContext)
+		rcancel()
+		if ok {
+			for _, a := range addrs {
+				if target, err = d.DialContext(dctx, "tcp", net.JoinHostPort(a, fmt.Sprintf("%d", port))); err == nil {
+					break
+				}
+			}
 		}
 	}
-	target, err := dialName(dctx, d, net.JoinHostPort(host, fmt.Sprintf("%d", port)), req[3] == 0x03)
+	if target == nil {
+		target, err = dialName(dctx, d, net.JoinHostPort(host, fmt.Sprintf("%d", port)), req[3] == 0x03)
+	}
 	cancel()
 	if err != nil {
 		_, _ = conn.Write([]byte{0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) // connection refused

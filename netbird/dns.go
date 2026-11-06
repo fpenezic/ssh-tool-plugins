@@ -34,11 +34,14 @@ import (
 	mgmProto "github.com/netbirdio/netbird/shared/management/proto"
 )
 
-// nsGroup is a nameserver group with match domains and the servers of it
-// the overlay reaches.
+// nsGroup is a nameserver group with match domains. overlay: its servers
+// sit inside the overlay, and servers are those; a group of public
+// servers is kept too (overlay false), so a more specific public domain
+// still wins the choice and is left to the client.
 type nsGroup struct {
 	domains []string
 	servers []netip.AddrPort
+	overlay bool
 }
 
 // overlayDNS is what the SOCKS proxy resolves through (set from the
@@ -54,13 +57,13 @@ func normDomain(d string) string {
 
 // tunnelInfo reads the sync response into the info event's fields and
 // the nameserver groups the proxy resolves through itself.
-func tunnelInfo(sr *mgmProto.SyncResponse) (map[string]any, []nsGroup) {
-	nm := sr.GetNetworkMap()
+// nm is the network map (decoded from the envelope for a peer on the
+// components format, see networkMapOf); pc the peer's own config.
+func tunnelInfo(pc *mgmProto.PeerConfig, nm *mgmProto.NetworkMap) (map[string]any, []nsGroup) {
 	info := map[string]any{}
 	var overlay []netip.Prefix
-	pc := nm.GetPeerConfig()
-	if pc == nil {
-		pc = sr.GetPeerConfig()
+	if p := nm.GetPeerConfig(); p != nil {
+		pc = p
 	}
 	if a := pc.GetAddress(); a != "" {
 		info["addresses"] = []string{a}
@@ -143,8 +146,8 @@ func tunnelInfo(sr *mgmProto.SyncResponse) (map[string]any, []nsGroup) {
 		}
 		// A primary group (no domains) takes every name; leave those to
 		// the client (its servers are usually public ones).
-		if len(doms) > 0 && len(reach) > 0 {
-			groups = append(groups, nsGroup{domains: doms, servers: reach})
+		if len(doms) > 0 {
+			groups = append(groups, nsGroup{domains: doms, servers: reach, overlay: len(reach) > 0})
 		}
 	}
 	if len(search) > 0 {
@@ -176,30 +179,39 @@ func groupFor(host string, groups []nsGroup) (nsGroup, bool) {
 type dialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
 
 // resolveOverlay asks the servers of host's nameserver group through the
-// overlay; ok=false when no group takes host or no server answered with
-// an address (the caller then dials the name the client's way).
-func resolveOverlay(ctx context.Context, host string, dial dialFunc) (string, bool) {
+// overlay and returns every address they gave (A first, then AAAA), for
+// the caller to try in order. ok=false when the group that takes host
+// (the most specific domain) is not an overlay one, none takes it, or no
+// server answered with an address: the caller then dials the name the
+// client's way.
+func resolveOverlay(ctx context.Context, host string, dial dialFunc) ([]string, bool) {
 	overlayDNS.Lock()
 	groups := overlayDNS.groups
 	overlayDNS.Unlock()
 	g, ok := groupFor(host, groups)
-	if !ok {
-		return "", false
+	if !ok || !g.overlay {
+		return nil, false
 	}
 	for _, s := range g.servers {
+		var addrs []string
 		for _, qt := range []uint16{dns.TypeA, dns.TypeAAAA} {
-			ip, err := queryOne(ctx, dial, s.String(), host, qt)
-			if err == nil && ip != "" {
-				return ip, true
+			got, err := queryOne(ctx, dial, s.String(), host, qt)
+			if err == nil {
+				addrs = append(addrs, got...)
 			}
 		}
+		if len(addrs) > 0 {
+			return addrs, true
+		}
 	}
-	return "", false
+	return nil, false
 }
 
 // queryOne asks one server for one record type over UDP, again over TCP
-// when the answer was truncated, and returns the first address.
-func queryOne(ctx context.Context, dial dialFunc, server, host string, qt uint16) (string, error) {
+// when the answer was truncated, and returns the addresses of the name
+// asked (or of the CNAME chain from it). An answer to another question
+// (wrong ID or name) is refused.
+func queryOne(ctx context.Context, dial dialFunc, server, host string, qt uint16) ([]string, error) {
 	m := new(dns.Msg)
 	m.SetQuestion(dns.Fqdn(host), qt)
 	m.RecursionDesired = true
@@ -225,20 +237,39 @@ func queryOne(ctx context.Context, dial dialFunc, server, host string, qt uint16
 		r, err = ask("tcp")
 	}
 	if err != nil {
-		return "", err
+		return nil, err
+	}
+	if r.Id != m.Id || len(r.Question) != 1 || !strings.EqualFold(r.Question[0].Name, m.Question[0].Name) || r.Question[0].Qtype != qt {
+		return nil, errors.New("the answer is to another question")
 	}
 	if r.Rcode != dns.RcodeSuccess {
-		return "", errors.New(dns.RcodeToString[r.Rcode])
+		return nil, errors.New(dns.RcodeToString[r.Rcode])
 	}
-	for _, rr := range r.Answer {
-		switch v := rr.(type) {
-		case *dns.A:
-			return v.A.String(), nil
-		case *dns.AAAA:
-			return v.AAAA.String(), nil
+	// Names the answer may carry addresses for: the one asked, then each
+	// CNAME target reached from it.
+	names := map[string]bool{strings.ToLower(m.Question[0].Name): true}
+	for changed := true; changed; {
+		changed = false
+		for _, rr := range r.Answer {
+			if c, ok := rr.(*dns.CNAME); ok && names[strings.ToLower(c.Hdr.Name)] && !names[strings.ToLower(c.Target)] {
+				names[strings.ToLower(c.Target)] = true
+				changed = true
+			}
 		}
 	}
-	return "", nil
+	var out []string
+	for _, rr := range r.Answer {
+		if !names[strings.ToLower(rr.Header().Name)] {
+			continue
+		}
+		switch v := rr.(type) {
+		case *dns.A:
+			out = append(out, v.A.String())
+		case *dns.AAAA:
+			out = append(out, v.AAAA.String())
+		}
+	}
+	return out, nil
 }
 
 // infoJSON is an info event's body, for comparing with the last one sent.
