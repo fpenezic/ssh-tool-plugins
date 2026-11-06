@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/netip"
@@ -183,9 +184,9 @@ func (g *Gateway) Hello(ctx context.Context) (*Info, error) {
 		return nil, errors.New("ClientHello: no connectivity_info (not a Check Point remote access gateway?)")
 	}
 	in := &Info{
-		ProtocolVersion: int(rd.Int("protocol_version", "protocol_version")),
+		ProtocolVersion: smallInt(rd.Int("protocol_version", "protocol_version")),
 		ServerIP:        ci.Str("server_ip"),
-		TunnelPort:      int(ci.Int("tcpt_port")),
+		TunnelPort:      portOf(ci.Int("tcpt_port")),
 		ClientEnabled:   ci.Bool("client_enabled"),
 	}
 	for _, p := range ci.List("supported_data_tunnel_protocols") {
@@ -293,7 +294,7 @@ func authResult(rd *Node) (*AuthResult, error) {
 }
 
 func authError(rd *Node, fallback string) error {
-	e := &AuthError{Code: int(rd.Int("error_code"))}
+	e := &AuthError{Code: smallInt(rd.Int("error_code"))}
 	if s := rd.Str("error_message"); s != "" {
 		e.Message, _ = Deobfuscate(s)
 	}
@@ -304,4 +305,23 @@ func authError(rd *Node, fallback string) error {
 		e.Message = fallback
 	}
 	return e
+}
+
+// smallInt narrows a number the gateway sent (a protocol version, an
+// error code): one outside int32 is no sensible value and reads as 0,
+// the same as an absent or malformed one (Node.Int).
+func smallInt(v int64) int {
+	if v < math.MinInt32 || v > math.MaxInt32 {
+		return 0
+	}
+	return int(v)
+}
+
+// portOf is a TCP port the gateway sent; anything outside 1-65535 reads
+// as 0, which the caller replaces with the default.
+func portOf(v int64) int {
+	if v < 1 || v > 65535 {
+		return 0
+	}
+	return int(v)
 }
