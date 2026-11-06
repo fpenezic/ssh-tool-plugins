@@ -43,7 +43,7 @@ Heartbeat, about every 15 s. Fields are optional per plugin.
 ```json
 {"event":"info","info":{"addresses":["10.0.0.5/32"],"routes":[...],"dns":[...],"mtu":1340,"transport":"dtls"}}
 ```
-Tunnel details for the app's Details view; sent at start and whenever they change (openconnect, openvpn, checkpoint, netbird). The app also remembers `routes`, `search_domains` (the DNS search domains) and `split_dns` (domains resolved through the tunnel), and its app proxy routes names in those domains through the tunnel. A report with `routes` is taken as the whole description (a domain list it leaves out is cleared); one without routes changes only what it carries. NetBird reports the peer's NetBird domain and its nameserver groups' match domains (search domains for the groups with search on).
+Tunnel details for the app's Details view; sent at start and whenever they change (openconnect, openvpn, checkpoint, netbird). The app also remembers `routes`, `search_domains` (the DNS search domains) and `split_dns` (domains resolved through the tunnel), and its app proxy routes names in those domains through the tunnel. A report with a `routes` field, an empty list included, is taken as the whole description (routes and domain lists it does not carry are cleared); one without the field changes only what it carries. The NetBird helper always sends the field. NetBird reports the peer's NetBird domain and its nameserver groups' match domains (search domains for the groups with search on).
 
 ```json
 {"event":"auth","id":"1","banner":"..","message":"..","error":"..",

@@ -41,6 +41,13 @@ func TestTunnelInfo(t *testing.T) {
 	if len(groups) != 2 || groups[0].domains[0] != "corp.example.com" || !groups[0].overlay || groups[0].servers[0].String() != "10.10.0.53:53" || groups[1].overlay {
 		t.Errorf("groups: %+v", groups)
 	}
+	// No routes: the field is still there, empty (the app reads it as the
+	// whole tunnel and drops routes it remembered).
+	nr := syncResponse()
+	nr.NetworkMap.Routes = nil
+	if info, _ := tunnelInfo(nil, nr.GetNetworkMap()); info["routes"] == nil || len(info["routes"].([]string)) != 0 {
+		t.Errorf("routes without any: %#v", info["routes"])
+	}
 	// A zone with search off is reported for routing, not as a search domain.
 	sr := syncResponse()
 	sr.NetworkMap.DNSConfig.CustomZones = []*mgmProto.CustomZone{{Domain: "nb.example.com", SearchDomainDisabled: true}}
