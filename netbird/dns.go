@@ -33,6 +33,7 @@ import (
 
 	"github.com/miekg/dns"
 	mgmProto "github.com/netbirdio/netbird/shared/management/proto"
+	"github.com/netbirdio/netbird/shared/netiputil"
 )
 
 // nsGroup is a nameserver group with match domains. overlay: its servers
@@ -69,6 +70,13 @@ func tunnelInfo(pc *mgmProto.PeerConfig, nm *mgmProto.NetworkMap) (map[string]an
 	if a := pc.GetAddress(); a != "" {
 		info["addresses"] = []string{a}
 		if p, err := netip.ParsePrefix(a); err == nil {
+			overlay = append(overlay, p.Masked())
+		}
+	}
+	// The account's IPv6 range too: a nameserver on another peer's IPv6
+	// address is inside the overlay without any route covering it.
+	if raw := pc.GetAddressV6(); len(raw) > 0 {
+		if p, err := netiputil.DecodePrefix(raw); err == nil {
 			overlay = append(overlay, p.Masked())
 		}
 	}
