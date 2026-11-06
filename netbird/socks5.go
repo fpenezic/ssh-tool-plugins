@@ -102,6 +102,13 @@ func handleConn(conn net.Conn, d dialer) error {
 	port := binary.BigEndian.Uint16(pb)
 
 	dctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	// A name in a nameserver group whose servers sit inside the overlay:
+	// asked here, through the netstack (dns.go says why).
+	if req[3] == 0x03 {
+		if ip, ok := resolveOverlay(dctx, host, d.DialContext); ok {
+			host = ip
+		}
+	}
 	target, err := d.DialContext(dctx, "tcp", net.JoinHostPort(host, fmt.Sprintf("%d", port)))
 	cancel()
 	if err != nil {

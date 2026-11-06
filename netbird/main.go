@@ -13,12 +13,14 @@
 //
 //	{"event":"ready","socks":"127.0.0.1:PORT","protocol":1}  peer up, proxy listening
 //	{"event":"status","peers":N}                 every 15s
+//	{"event":"info","info":{...}}                addresses, routes, DNS domains (dns.go); at start and on change
 //	{"event":"error","error":"..."}              fatal startup problem
 //
 // The setup key arrives via the SSHTOOL_NB_SETUP_KEY environment
 // variable, never argv (argv is world-readable in the process list).
-// After the first successful registration the config file under
-// --state-dir carries device credentials and the key may be absent.
+// The config is in memory (see the ConfigPath note in main), so every
+// start registers this machine as a new peer: a reusable key (with
+// ephemeral peers, so the old ones are removed) is what this expects.
 package main
 
 import (
@@ -143,11 +145,31 @@ func main() {
 
 	emit(map[string]any{"event": "ready", "socks": ln.Addr().String(), "protocol": protocolVersion})
 
+	// The tunnel's addresses, routes and DNS domains, from the latest
+	// network map: sent now and whenever they change.
+	lastInfo := ""
+	sendInfo := func() {
+		sr, err := client.GetLatestSyncResponse()
+		if err != nil || sr == nil {
+			return
+		}
+		info, groups := tunnelInfo(sr)
+		overlayDNS.Lock()
+		overlayDNS.groups = groups
+		overlayDNS.Unlock()
+		if j := infoJSON(info); j != lastInfo {
+			lastInfo = j
+			emit(map[string]any{"event": "info", "info": info})
+		}
+	}
+	sendInfo()
+
 	// Status heartbeat: connected peer count. Also proves liveness.
 	go func() {
 		t := time.NewTicker(15 * time.Second)
 		defer t.Stop()
 		for range t.C {
+			sendInfo()
 			peers := 0
 			if st, err := client.Status(); err == nil {
 				for _, p := range st.Peers {
