@@ -7,6 +7,10 @@ updates:
     ignore:
       # vendored with a patch (openconnect/third_party): updated by hand
       - dependency-name: "github.com/sagernet/sing-openconnect"
+      # needs the replace set of its own go.mod mirrored (netbird/go.mod):
+      # a version-only bump builds against the wrong forks; bumped by hand
+      # (alerts still show for it)
+      - dependency-name: "github.com/netbirdio/netbird"
     groups:
       go-deps:
         patterns: ["*"]
