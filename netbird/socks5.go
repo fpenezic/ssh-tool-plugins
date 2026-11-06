@@ -15,6 +15,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"strings"
 	"time"
 )
 
@@ -109,7 +110,7 @@ func handleConn(conn net.Conn, d dialer) error {
 			host = ip
 		}
 	}
-	target, err := d.DialContext(dctx, "tcp", net.JoinHostPort(host, fmt.Sprintf("%d", port)))
+	target, err := dialName(dctx, d, net.JoinHostPort(host, fmt.Sprintf("%d", port)), req[3] == 0x03)
 	cancel()
 	if err != nil {
 		_, _ = conn.Write([]byte{0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0}) // connection refused
@@ -131,4 +132,30 @@ func handleConn(conn net.Conn, d dialer) error {
 	go func() { _, _ = io.Copy(conn, target); done <- struct{}{} }()
 	<-done
 	return nil
+}
+
+// readyAt is when the proxy started listening (set in main).
+var readyAt time.Time
+
+// startupGrace is how long after start a name the client's DNS does not
+// know yet is asked again: the client is up before its DNS service has
+// the network's zone (seen with NetBird v0.82: the first dial right
+// after start got "no such host" for a peer's name, the next one 2 s
+// later resolved).
+const startupGrace = 20 * time.Second
+
+// dialName dials addr; a name that does not resolve during the startup
+// grace is tried again every second, at most four times.
+func dialName(ctx context.Context, d dialer, addr string, byName bool) (net.Conn, error) {
+	for try := 0; ; try++ {
+		c, err := d.DialContext(ctx, "tcp", addr)
+		if err == nil || !byName || try >= 4 || time.Since(readyAt) > startupGrace || !strings.Contains(err.Error(), "no such host") {
+			return c, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, err
+		case <-time.After(time.Second):
+		}
+	}
 }

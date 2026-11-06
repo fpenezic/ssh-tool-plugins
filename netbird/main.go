@@ -141,6 +141,7 @@ func main() {
 	if err != nil {
 		fatal("socks listen: %v", err)
 	}
+	readyAt = time.Now()
 	go serveSocks(ln, client)
 
 	emit(map[string]any{"event": "ready", "socks": ln.Addr().String(), "protocol": protocolVersion})
