@@ -1,0 +1,41 @@
+# CodeRabbit review settings for the plugins. Reviews pull requests only.
+# Kept quiet on purpose: findings, not prose.
+language: en-US
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  sequence_diagrams: false
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!**/go.sum"
+    # Vendored upstream code; only its README / patch notes are ours.
+    - "!openconnect/third_party/**/*.go"
+  pre_merge_checks:
+    # Code here is documented with comments where they carry the why, not
+    # with a docstring on every function: the coverage check only fails.
+    docstrings:
+      mode: "off"
+  path_instructions:
+    - path: "**/*"
+      instructions: |
+        House rules - flag a change that breaks one:
+        - No em-dashes or en-dashes anywhere (code, comments, docs, commit
+          text); use " - ".
+        - No emojis.
+        - No sensitive data in repo files: real email addresses, internal
+          hostnames or IPs, customer names, tokens. Examples use
+          example.com.
+        - Each plugin is its own Go module with its own licence and tag
+          namespace (<plugin>-vN); the wire protocol is PROTOCOL.md, and
+          a change to it needs the app's side too.
+    - path: "netbird/go.mod"
+      instructions: |
+        The replace set must mirror the replaces in the go.mod of the
+        pinned github.com/netbirdio/netbird version; flag a version change
+        without the matching replace set.
