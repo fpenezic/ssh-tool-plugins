@@ -21,6 +21,17 @@ reviews:
     # with a docstring on every function: the coverage check only fails.
     docstrings:
       mode: "off"
+    custom_checks:
+      - name: "Protocol and docs"
+        mode: warning
+        instructions: |
+          Pass when the PR changes no event, command or field of the
+          helper protocol and no user-visible behaviour of a plugin
+          (flags, environment variables, build or release steps), or when
+          it does and also updates the matching text: PROTOCOL.md for the
+          protocol, README.md for build, release or plugin-specific
+          behaviour. Fail and name the missing file otherwise. Internal
+          refactors, tests, dependency bumps and CI-only changes pass.
   path_instructions:
     - path: "**/*"
       instructions: |
@@ -39,3 +50,28 @@ reviews:
         The replace set must mirror the replaces in the go.mod of the
         pinned github.com/netbirdio/netbird version; flag a version change
         without the matching replace set.
+    - path: "**/*.go"
+      instructions: |
+        Each plugin is a sidecar the app spawns: line-delimited JSON events
+        on stdout (stdout is the protocol - logs go to stderr), commands on
+        stdin, a loopback SOCKS5 proxy; closing stdin stops it. Secrets
+        arrive in environment variables, never argv. Look for: anything but
+        protocol JSON written to stdout, secrets reaching logs or events,
+        goroutine leaks and missing context cancellation on dials, locks
+        held across blocking calls, errors dropped silently, a SOCKS
+        request answered without a reply code, TLS verification turned off
+        without a pin or CA check in its place.
+    - path: "PROTOCOL.md"
+      instructions: |
+        The wire contract with the app (ssh-tool, internal/tunnelhelper):
+        events, commands, fields. Flag a change to an event or field that
+        is not backward compatible without a bump of the protocol version
+        the ready event announces.
+    - path: "README.md"
+      instructions: |
+        Check stated facts against the repo: tag names per plugin, build
+        steps and the Go toolchain (each plugin's go.mod), the pinned
+        library versions it names (go.mod), and that files and flags it
+        mentions exist.
+chat:
+  auto_reply: true
