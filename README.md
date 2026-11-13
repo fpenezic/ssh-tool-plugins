@@ -72,6 +72,12 @@ An embedded userspace NetBird peer (`github.com/netbirdio/netbird/client/embed`,
 - **Start.** The client is up before its DNS service has the network's zone; during the first 20 s a name that does not resolve is tried again every second, at most four times.
 - **Version.** The replace set in `netbird/go.mod` mirrors the pinned NetBird release's own; Dependabot leaves NetBird alone, it is bumped by hand.
 
+## The OpenConnect client
+
+The OpenConnect plugin runs [sing-openconnect](https://github.com/sagernet/sing-openconnect) in process (vendored, see [`openconnect/third_party`](openconnect/third_party)): the gateway login is relayed to the app as `auth` events, and the tunnel is served to the app over SOCKS5 from a userspace network stack.
+
+Drops the client recovers from by itself (a lost network, a rekey, a rejected session) reconnect in place, and a status event reports the tunnel down until it is back. When the gateway ends the session for good (the session time limit, `Max time exceeded`, an idle timeout, an administrator), the client does not reconnect: the helper then sends an `error` event and exits. The app sees the tunnel stop, and its next connect starts the helper again with a fresh login.
+
 ## The OpenVPN client
 
 `openvpn/internal/ovpn` is an OpenVPN 2.x client written for this plugin
