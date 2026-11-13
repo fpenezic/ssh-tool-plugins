@@ -76,7 +76,7 @@ An embedded userspace NetBird peer (`github.com/netbirdio/netbird/client/embed`,
 
 The OpenConnect plugin runs [sing-openconnect](https://github.com/sagernet/sing-openconnect) in process (vendored, see [`openconnect/third_party`](openconnect/third_party)): the gateway login is relayed to the app as `auth` events, and the tunnel is served to the app over SOCKS5 from a userspace network stack.
 
-Drops the client recovers from by itself (a lost network, a rekey, a rejected session) reconnect in place, and a status event reports the tunnel down until it is back. When the gateway ends the session for good (the session time limit, `Max time exceeded`, an idle timeout, an administrator), the client does not reconnect: the helper then sends an `error` event and exits. The app sees the tunnel stop, and its next connect starts the helper again with a fresh login.
+Drops the client recovers from by itself (a lost network, a rekey, a rejected session) reconnect in place, and a status event reports the tunnel down until it is back. The client gives up in two cases: at once when the gateway ends the session with a reason (the session time limit, `Max time exceeded`, an idle timeout, an administrator), and after its reconnect timeout (300 seconds by default) when the reconnects keep failing. The helper then sends an `error` event and exits. The app sees the tunnel stop, and its next connect starts the helper again with a fresh login.
 
 ## The OpenVPN client
 
