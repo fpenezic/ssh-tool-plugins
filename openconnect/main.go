@@ -536,6 +536,17 @@ func pumpIn(ctx context.Context, tdev interface {
 		if err != nil {
 			if ctx.Err() == nil {
 				log.Printf("from vpn: %v", err)
+				if !errors.Is(err, oc.ErrClientClosed) {
+					// The client stops reading only on a terminal error: the
+					// gateway ended the session (max time, idle timeout, an
+					// admin) or refused it for good. It does not reconnect
+					// after one, so staying up would leave a tunnel the app
+					// still sees as running that fails every dial with "data
+					// channel is not ready", for as long as the app runs.
+					// Exit instead: the app sees the tunnel stop, and its
+					// next connect starts the helper again with a fresh login.
+					fatal("the gateway ended the session: %v", err)
+				}
 			}
 			return
 		}
