@@ -190,8 +190,8 @@ github.com/googleapis/enterprise-certificate-proxy v0.3.14 h1:yh8ncqsbUY4shRD5dA
 github.com/googleapis/enterprise-certificate-proxy v0.3.14/go.mod h1:vqVt9yG9480NtzREnTlmGSBmFrA+bzb0yl0TxoBQXOg=
 github.com/googleapis/gax-go/v2 v2.21.0 h1:h45NjjzEO3faG9Lg/cFrBh2PgegVVgzqKzuZl/wMbiI=
 github.com/googleapis/gax-go/v2 v2.21.0/go.mod h1:But/NJU6TnZsrLai/xBAQLLz+Hc7fHZJt/hsCz3Fih4=
-github.com/gopacket/gopacket v1.6.1 h1:S19Ok/KVGDFNHVW2uCva5U0vZ+uHqiZQdxteL50v6Ak=
-github.com/gopacket/gopacket v1.6.1/go.mod h1:i3NaGaqfoWKAr1+g7qxEdWsmfT+MXuWkAe9+THv8LME=
+github.com/gopacket/gopacket v1.7.7 h1:9MaMKsjcFCnUVPI9CHp/ZDhu1SSV+rs0THQ2ztRAqmE=
+github.com/gopacket/gopacket v1.7.7/go.mod h1:QKowPlTLrQU2rqV5C5I14Aoaid3l8da3kbddibc/Wgk=
 github.com/gorilla/handlers v1.5.2 h1:cLTUSsNkgcwhgRqvCNmdbRWG0A3N4F+M2nWKdScwyEE=
 github.com/gorilla/handlers v1.5.2/go.mod h1:dX+xVpaxdSw+q0Qek8SSsl3dfMk3jNddUkMzo0GtH0w=
 github.com/gorilla/mux v1.8.1 h1:TuBL49tXwgrFYWhqrNgrUNEY92u81SPhu7sTdzQEiWY=
@@ -333,8 +333,8 @@ github.com/netbirdio/ice/v4 v4.0.0-20261021152109-d0e5dfacb548 h1:dMRtLZZm7qpyfu
 github.com/netbirdio/ice/v4 v4.0.0-20261021152109-d0e5dfacb548/go.mod h1:UsaaFHJPfIMNzvOybklN9AO3v/4YGj6bCC1vpmYA0vo=
 github.com/netbirdio/management-integrations/integrations v0.0.0-20261021190039-6c1585eb11de h1:aCmxkLAjH3pF/88eUAXp9yMOwGtcvNTC5Mqszm9xuo0=
 github.com/netbirdio/management-integrations/integrations v0.0.0-20261021190039-6c1585eb11de/go.mod h1:LLvpw/iWbXX9+7HF7ueqkyE7SoFaeqoCmbskOQL9gbs=
-github.com/netbirdio/netbird v0.82.0 h1:ovBtNrLRDLHTTGxl8yczdvDnmU18buTSL+0jP9ca1jw=
-github.com/netbirdio/netbird v0.82.0/go.mod h1:GcEvL+pyn6vAhwJew6K6O0tKGNMe/7/q4di5FsJIvbE=
+github.com/netbirdio/netbird v0.83.1 h1:rcUdKE5UGJP2AptC/7tTs8zN2kpASa7FDjW1K9R042M=
+github.com/netbirdio/netbird v0.83.1/go.mod h1:FiIbzr/UoItZ+jXp3A4EVJkGKhrodSj7C7JhqrzbxWM=
 github.com/netbirdio/signal-dispatcher/dispatcher v0.0.0-20250805121659-6b4ac470ca45 h1:ujgviVYmx243Ksy7NdSwrdGPSRNE3pb8kEDSpH0QuAQ=
 github.com/netbirdio/signal-dispatcher/dispatcher v0.0.0-20250805121659-6b4ac470ca45/go.mod h1:5/sjFmLb8O96B5737VCqhHyGRzNFIaN/Bu7ZodXc3qQ=
 github.com/netbirdio/wireguard-go v0.0.0-20261021152105-0de46b309cdb h1:3X7pVeZeneq4MK7hvvqeSGi1ir6OElgIqHd6cI4KsXo=

@@ -2,11 +2,11 @@ module github.com/fpenezic/ssh-tool-plugins/netbird
 
 go 1.26.0
 
-toolchain go1.27.3
+toolchain go1.27.4
 
 require (
 	github.com/miekg/dns v1.1.73
-	github.com/netbirdio/netbird v0.82.0
+	github.com/netbirdio/netbird v0.83.1
 	golang.zx2c4.com/wireguard/wgctrl v0.0.0-20241231184526-a9ab2273dd10
 )
 
@@ -51,7 +51,7 @@ require (
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/nftables v0.3.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/gopacket/gopacket v1.6.1 // indirect
+	github.com/gopacket/gopacket v1.7.7 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.3 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
