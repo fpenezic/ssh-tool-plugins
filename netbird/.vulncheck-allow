@@ -1,0 +1,2 @@
+GO-2026-6163  # pion/stun/v3 via the NetBird client; 3.1.5 alone breaks the build (pion/transport v4), waits for a NetBird release
+GO-2026-4479  # pion/dtls/v2 via the NetBird client (pion/turn), no fixed release
