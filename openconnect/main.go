@@ -515,17 +515,55 @@ func pumpOut(ctx context.Context, tdev interface {
 }, client *oc.Client) {
 	bufs := [][]byte{make([]byte, 65536)}
 	sizes := make([]int, 1)
+	var drops dropLog
 	for ctx.Err() == nil {
 		n, err := tdev.Read(bufs, sizes, 0)
 		if err != nil {
 			return
 		}
 		for i := 0; i < n; i++ {
-			if err := client.WriteDataPacket(bufs[i][:sizes[i]]); err != nil && ctx.Err() == nil {
-				log.Printf("to vpn: %v", err)
+			err := client.WriteDataPacket(bufs[i][:sizes[i]])
+			if ctx.Err() != nil {
+				return
+			}
+			if msg := drops.note(err, time.Now()); msg != "" {
+				log.Print(msg)
 			}
 		}
 	}
+}
+
+// dropLog turns per-packet write errors into a few log lines: one when
+// sending starts failing, a reminder with the count while it keeps failing,
+// and one when it works again. While the data channel is down (a reconnect
+// in progress) every packet the system sends would otherwise log a line.
+type dropLog struct {
+	dropped  int
+	since    time.Time
+	reminded time.Time
+}
+
+const dropRemind = time.Minute
+
+func (d *dropLog) note(err error, now time.Time) string {
+	if err == nil {
+		if d.dropped == 0 {
+			return ""
+		}
+		msg := fmt.Sprintf("to vpn: sending again after %s, %d packets dropped", now.Sub(d.since).Round(time.Second), d.dropped)
+		*d = dropLog{}
+		return msg
+	}
+	d.dropped++
+	if d.dropped == 1 {
+		d.since, d.reminded = now, now
+		return fmt.Sprintf("to vpn: %v (dropping packets until it is back)", err)
+	}
+	if now.Sub(d.reminded) >= dropRemind {
+		d.reminded = now
+		return fmt.Sprintf("to vpn: still failing (%v), %d packets dropped in %s", err, d.dropped, now.Sub(d.since).Round(time.Second))
+	}
+	return ""
 }
 
 func pumpIn(ctx context.Context, tdev interface {
